@@ -18,7 +18,19 @@ class DetectionService {
 			const modelURL = '../../model/model.json';
 			const metadataURL = '../../model/metadata.json'; 
 
-			this.model = await tmImage.load(modelURL, metadataURL);
+			this.model = await tmImage.load(
+				modelURL, 
+				metadataURL,
+				(progress) => {
+					const percent = Math.round(progress * 100);
+
+					const statusText = document.querySelector('#header-status span:last-child');
+
+					if (statusText) {
+						statusText.textContent = `Memuat model... ${percent}%`;
+					}
+				}
+			);
 			this.labels = this.model.getClassLabels();
 
 		} catch (error) {
