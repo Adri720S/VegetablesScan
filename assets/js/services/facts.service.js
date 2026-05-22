@@ -2,24 +2,44 @@ import { logError } from '../core/utils.js';
 
 class FunFactService {
 	constructor() {
+		this.generator = null;
 		this.isModelLoaded = false;
 		this.isGenerating = false;
 	}
 
-	// Simulasi load model AI
-	async loadModel() {
+	// Load model Generative AI
+	async loadModel(progressCallback = null) {
 		try {
-			await new Promise(resolve => setTimeout(resolve, 800));
+			// ambil pipeline dari global window
+			const pipeline = window.pipeline;
+
+			if (!pipeline) {
+				throw new Error('Transformers pipeline tidak ditemukan');
+			}
+
+			// callback progress loading
+			this.generator = await pipeline(
+				'text-generation',
+				'Xenova/distilgpt2',
+				{
+					progress_callback: (progress) => {
+						if (progressCallback && progress.progress) {
+							progressCallback(Math.round(progress.progress * 100));
+						}
+					}
+				}
+			);
 
 			this.isModelLoaded = true;
 
+			console.log('✅ Generative AI model loaded');
 		} catch (error) {
-			logError('Error loading fun fact model', error);
+			logError('❌ Error loading AI model:', error);
 			throw new Error(`Failed to load FunFact model: ${error.message}`);
 		}
 	}
 
-	// Generate fun fact aman & relevan
+	// Generate AI Fun Fact
 	async generateFunFact(vegetable, tone = 'normal') {
 		if (!this.isModelLoaded || this.isGenerating) {
 			throw new Error('Model belum siap');
@@ -28,76 +48,81 @@ class FunFactService {
 		this.isGenerating = true;
 
 		try {
-			// Sanitasi input
+			// sanitasi input
 			const cleanVeg = vegetable
 				.replace(/[^a-zA-Z ]/g, '')
-				.trim();
+				.trim()
+				.substring(0, 30);
 
-			// Database fakta aman
-			const factsDatabase = {
-				Broccoli: {
-					normal: 'Brokoli kaya vitamin C dan baik untuk daya tahan tubuh.',
-					funny: 'Brokoli mungkin hijau dan kecil, tapi gizinya luar biasa 😄',
-					professional: 'Brokoli mengandung antioksidan dan nutrisi penting untuk kesehatan.',
-					casual: 'Brokoli enak dimasak tumis dan sehat buat tubuh!'
-				},
+			if (!cleanVeg) {
+				throw new Error('Input sayuran tidak valid');
+			}
 
-				Carrot: {
-					normal: 'Wortel mengandung beta karoten yang baik untuk kesehatan mata.',
-					funny: 'Katanya makan wortel bikin mata makin tajam 👀',
-					professional: 'Wortel merupakan sumber vitamin A yang sangat baik.',
-					casual: 'Wortel cocok dijadikan sup atau camilan sehat.'
-				},
-
-				Tomato: {
-					normal: 'Tomat mengandung likopen yang baik untuk kesehatan jantung.',
-					funny: 'Tomat itu buah yang sering menyamar jadi sayur 🍅',
-					professional: 'Tomat kaya antioksidan dan baik untuk metabolisme tubuh.',
-					casual: 'Tomat segar enak banget buat sambal atau salad.'
-				},
-
-				Potato: {
-					normal: 'Kentang merupakan sumber energi karena kaya karbohidrat.',
-					funny: 'Kentang bisa jadi french fries favorit semua orang 🍟',
-					professional: 'Kentang menyediakan karbohidrat kompleks untuk energi.',
-					casual: 'Kentang gampang diolah jadi banyak makanan enak.'
-				},
-
-				Cabbage: {
-					normal: 'Kubis kaya serat dan baik untuk sistem pencernaan.',
-					funny: 'Kubis sering diremehkan padahal gizinya keren 😎',
-					professional: 'Kubis mengandung vitamin dan serat penting bagi tubuh.',
-					casual: 'Kubis cocok buat tumisan dan makanan rumahan.'
-				},
-
-				Vegetable: {
-					normal: 'Sayuran mengandung banyak vitamin dan mineral penting.',
-					funny: 'Makan sayur bikin tubuh lebih happy 🥦',
-					professional: 'Sayuran penting untuk pola makan sehat dan seimbang.',
-					casual: 'Rajin makan sayur bikin badan lebih segar.'
-				}
+			// variasi tone prompt
+			const tones = {
+				normal: 'Give a short fun fact about',
+				funny: 'Give a funny fun fact about',
+				professional: 'Give a professional nutrition fact about',
+				casual: 'Give a casual fun fact about'
 			};
 
-			// Cari fakta sesuai label
-			const vegData = factsDatabase[cleanVeg] || factsDatabase['Vegetable'];
+			const basePrompt =
+				tones[tone] || tones.normal;
 
-			// Pilih tone
-			const fact = vegData[tone] || vegData.normal;
+			const prompt = `${basePrompt} ${cleanVeg} in 1 short sentence.`;
 
-			// Simulasi proses AI
-			await new Promise(resolve => setTimeout(resolve, 500));
+			console.log('PROMPT:', prompt);
 
-			return fact;
+			// generate text AI
+			const result = await this.generator(prompt, {
+				max_new_tokens: 30,
+				temperature: 0.7,
+				do_sample: true,
+				top_k: 50,
+				top_p: 0.95
+			});
+
+			console.log(result);
+
+			let generatedText = result[0].generated_text;
+
+			// hapus prompt dari output
+			generatedText = generatedText.replace(prompt, '').trim();
+
+			// fallback kalau output kosong
+			if (!generatedText) {
+				generatedText = `${cleanVeg} is healthy and rich in nutrients.`;
+			}
+
+			// filter kata sensitif
+			const bannedWords = [
+				'atheist',
+				'religion',
+				'racist',
+				'violence',
+				'politics'
+			];
+
+			const containsBadWord = bannedWords.some(word =>
+				generatedText.toLowerCase().includes(word)
+			);
+
+			if (containsBadWord) {
+				generatedText = `${cleanVeg} contains beneficial nutrients for the body.`;
+			}
+
+			return generatedText;
 
 		} catch (error) {
-			logError('Generate fun fact error', error);
-			return 'Sayuran sangat baik untuk kesehatan tubuh.';
+			logError('❌ Error generating fun fact:', error);
+
+			return `${vegetable} is a nutritious vegetable that is good for your health.`;
+
 		} finally {
 			this.isGenerating = false;
 		}
 	}
 
-	// Status model
 	isReady() {
 		return this.isModelLoaded && !this.isGenerating;
 	}
